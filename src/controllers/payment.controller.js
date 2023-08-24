@@ -1,17 +1,66 @@
 const Payment = require('../models/payment.model');
 const CreditCard = require('../models/card.model');
+const moment = require('moment');
+
+
+function validateCard(card) {
+    const currentDate = new Date();
+    const expirationDate = new Date(card.expirationDate);
+    console.log('Received card data:', card);
+    console.log('Current date:', currentDate.toISOString());
+    console.log('Expiration date:', expirationDate.toISOString());
+
+    if (!card.securityCode || card.securityCode.toString().length !== 3) {
+        console.log('Invalid security code');
+        return false;
+    }
+
+    if (
+        isNaN(expirationDate) ||
+        expirationDate < currentDate ||
+        expirationDate.getUTCFullYear() < currentDate.getUTCFullYear() || // Check if year is less than current year
+        (expirationDate.getUTCFullYear() === currentDate.getUTCFullYear() && expirationDate.getUTCMonth() < currentDate.getUTCMonth()) // Check if month is less than current month
+    ) {
+        console.log('Invalid expiration date');
+        return false;
+    }
+
+    return true;
+}
+
+
 
 async function createPayment(req, res) {
     try {
-        const { cardNumber, expirationDate, securityCode, amount } = req.body;
+        console.log('createPayment function called');
+        let { cardNumber, expirationDate, securityCode, amount } = req.body;
+        console.log('Received payment data:', req.body);
 
-        const creditCard = await CreditCard.findOne({ cardNumber });
+        const isValidCard = validateCard({ expirationDate, securityCode });
+        console.log('isValidCard:', isValidCard);
+
+        if (!isValidCard) {
+            return res.status(400).json({ message: 'Tarjeta de crédito inválida' });
+        }
+
+        let creditCard;
+        try {
+            creditCard = await CreditCard.findOne({ cardNumber: cardNumber });
+            console.log('Result of findOne query:', creditCard);
+        } catch (error) {
+            console.error('Error in findOne query:', error);
+            return res.status(500).json({ error: 'Error querying the database' });
+        }
+
+        console.log('Found credit card:', creditCard);
 
         if (!creditCard) {
+            console.log(1)
             return res.status(404).json({ message: 'Tarjeta de crédito no encontrada' });
         }
 
         if (creditCard.cardBalance < amount) {
+            console.log(2)
             return res.status(400).json({ message: 'Fondos insuficientes en la tarjeta de crédito' });
         }
 
@@ -24,14 +73,18 @@ async function createPayment(req, res) {
             securityCode,
             amount
         });
-
         const savedPayment = await newPayment.save();
+        console.log('New payment saved:', savedPayment);
 
         res.status(201).json(savedPayment);
     } catch (error) {
+        console.error('Error creating payment:', error.message);
         res.status(500).json({ error: error.message });
     }
 }
+
+
+
 
 async function getAllPayments(req, res) {
     try {
